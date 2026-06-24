@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>主動式 ETF 持股異動追蹤</title>
+<link rel="preconnect" href="https://cdn.jsdelivr.net" />
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div id="app">
+  <!-- 頂部 -->
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark">A<span>·</span>ETF</div>
+      <div class="brand-text">
+        <h1>主動式 ETF 持股異動追蹤</h1>
+        <p class="sub">每日持股快照 · 異動比對 · 跨檔共同操作</p>
+      </div>
+    </div>
+    <div class="topmeta">
+      <div class="kpi"><span class="kpi-num" data-kpi="etf_count">—</span><span class="kpi-label">追蹤 ETF</span></div>
+      <div class="kpi"><span class="kpi-num" data-kpi="total_holdings">—</span><span class="kpi-label">持股筆數</span></div>
+      <div class="kpi"><span class="kpi-num" data-kpi="with_diff">—</span><span class="kpi-label">可比對檔數</span></div>
+      <div class="gen">資料產生<br><time id="gen-time">—</time></div>
+      <button id="refresh-btn" class="refresh-btn" hidden>
+        <span class="rb-ic">⟳</span><span class="rb-label">更新資料</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- 分頁導覽 -->
+  <nav class="tabs">
+    <button class="tab is-active" data-view="overview"><span class="t-ic">▦</span>ETF 清單總覽</button>
+    <button class="tab" data-view="detail"><span class="t-ic">◉</span>單檔持股 + 異動</button>
+    <button class="tab" data-view="common"><span class="t-ic">⇅</span>共同加碼 / 減碼榜</button>
+    <div class="tab-spacer"></div>
+    <div class="legend">
+      <span class="lg lg-up">■ 加碼 / 新增</span>
+      <span class="lg lg-down">■ 減碼 / 出清</span>
+      <span class="lg-note">紅漲綠跌（台股慣例）</span>
+    </div>
+  </nav>
+
+  <main class="stage">
+    <!-- 1. 總覽 -->
+    <section class="view is-active" id="view-overview">
+      <div class="view-head">
+        <h2>主動式 ETF 清單</h2>
+        <input id="etf-search" class="search" type="search" placeholder="搜尋代號 / 名稱 / 投信…" />
+      </div>
+      <div id="etf-grid" class="etf-grid"></div>
+    </section>
+
+    <!-- 2. 單檔 -->
+    <section class="view" id="view-detail">
+      <div class="view-head detail-head">
+        <div class="detail-picker">
+          <label>選擇 ETF</label>
+          <select id="etf-select"></select>
+        </div>
+        <div id="detail-meta" class="detail-meta"></div>
+      </div>
+      <div class="detail-grid">
+        <div class="card span-2">
+          <div class="card-head"><h3>持股權重分佈</h3><span class="hint">前 15 大 · 懸停圖例可對應扇形</span></div>
+          <div class="weight-wrap">
+            <div id="weight-chart" class="chart"></div>
+            <div id="weight-legend" class="weight-legend"></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>當日異動</h3><span id="diff-date" class="hint"></span></div>
+          <div id="diff-filter" class="chips"></div>
+          <div id="diff-list" class="diff-list"></div>
+        </div>
+        <div class="card span-3">
+          <div class="card-head"><h3>完整持股明細</h3><span class="hint" id="holding-count"></span></div>
+          <div class="table-wrap">
+            <table id="holdings-table" class="data-table">
+              <thead><tr>
+                <th data-sort="idx" class="num">#</th>
+                <th data-sort="stock_id">代號</th>
+                <th data-sort="stock_name">名稱</th>
+                <th data-sort="weight_pct" class="num sortable">權重 %</th>
+                <th data-sort="shares" class="num sortable">持有張數</th>
+                <th data-sort="shares_diff" class="num sortable">張數變化</th>
+                <th data-sort="change_type">異動</th>
+              </tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3. 共同榜 -->
+    <section class="view" id="view-common">
+      <div class="view-head">
+        <h2>多檔 ETF 共同操作榜</h2>
+        <div class="seg" id="common-toggle" data-dir="add">
+          <button class="seg-btn is-active" data-dir="add">共同加碼</button>
+          <button class="seg-btn" data-dir="reduce">共同減碼</button>
+        </div>
+      </div>
+      <div class="common-grid">
+        <div class="card span-2">
+          <div class="card-head"><h3 id="common-title">共同加碼排行</h3><span class="hint">依同向 ETF 檔數排序</span></div>
+          <div id="common-chart" class="chart tall"></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>清單</h3><span class="hint">點列高亮對應長條</span></div>
+          <div id="common-list" class="common-list"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <div class="foot-grid">
+      <div class="foot-col">
+        <h4>免責聲明</h4>
+        <p>本網站為個人技術研究與學習用途，所有內容僅供參考，<b>不構成任何投資建議、要約或招攬</b>。
+        資料可能有延遲、缺漏或錯誤，使用者應自行向官方來源查證。權重變化可能僅反映股價漲跌，
+        實際買賣應以「持有股數（張數）變化」為準。依本網站資訊所為之任何投資決策與後果，概由使用者自行承擔，
+        開發者不負任何責任。</p>
+      </div>
+      <div class="foot-col">
+        <h4>資料來源</h4>
+        <p>ETF 清單：<a href="https://www.twse.com.tw/zh/products/securities/etf/products/active-list.html" target="_blank" rel="noopener">臺灣證券交易所（TWSE）主動式 ETF</a>。<br>
+        持股明細：<a href="https://www.moneydj.com/etf/" target="_blank" rel="noopener">MoneyDJ 理財網</a>。<br>
+        各項著作權與商標歸原資料來源所有，本網站不主張任何權利。</p>
+      </div>
+      <div class="foot-col">
+        <h4>使用政策 · 不得商業使用</h4>
+        <p>本專案以 <b>非商業（non-commercial）</b>研究目的釋出，<b>嚴禁任何商業用途</b>，
+        包含但不限於販售、付費訂閱、廣告營利或併入商業產品。
+        轉載或衍生使用須註明出處並同樣維持非商業性質，且須遵守上述各資料來源之服務條款。</p>
+      </div>
+    </div>
+    <div class="foot-bottom">
+      <span>主動式 ETF 持股異動追蹤系統 · 開源於 GitHub · 授權 TraderXiao · 僅供研究參考</span>
+      <span class="foot-gen">資料產生時間 <time id="gen-time-foot">—</time></span>
+    </div>
+  </footer>
+</div>
+<script src="app.js"></script>
+</body>
+</html>

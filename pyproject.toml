@@ -1,0 +1,22 @@
+[project]
+name = "active-etf-tracker"
+version = "0.1.0"
+description = "主動式 ETF 每日持股異動追蹤系統"
+requires-python = ">=3.10"
+dependencies = [
+    "playwright>=1.40",
+    "beautifulsoup4>=4.12",
+    "lxml>=5.0",
+    "pandas>=2.0",
+    "openpyxl>=3.1",
+]
+
+[project.scripts]
+active-etf = "active_etf_tracker.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
