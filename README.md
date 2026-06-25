@@ -1,5 +1,7 @@
 # 主動式 ETF 每日持股異動追蹤系統 (ActiveEtfTracker)
 
+[![tests](https://github.com/would2000/ActiveEtfTracker/actions/workflows/tests.yml/badge.svg)](https://github.com/would2000/ActiveEtfTracker/actions/workflows/tests.yml)
+
 每天抓取台股**股票型主動式 ETF**（證券代號第六碼為 `A`）的持股快照，與前一個資料日期比對，
 產出「新增 / 出清 / 加碼 / 減碼 / 權重升降」異動清單，並匯出 CSV / Excel 與互動式儀表板。
 
