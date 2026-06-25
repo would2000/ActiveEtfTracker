@@ -14,9 +14,9 @@ from typing import Optional
 
 from . import config
 from .db import SqliteRepository
+from .models import CHANGE_NONE
 from .scrapers.base import now_iso
 from .services import aggregate, diff_service
-from .services.trading_date import latest_two_dates
 
 WEB_DIR = config.PROJECT_ROOT / "web"
 DATA_JSON = WEB_DIR / "data.json"
@@ -30,15 +30,16 @@ def build_payload(repo: SqliteRepository, etf_type: str = "stock", min_etfs: int
     created = now_iso()
     etfs = repo.get_etfs(etf_type=etf_type)
     etf_meta, holdings, diffs = [], {}, {}
+    diffs_by_code: dict[str, list] = {}   # 每檔最新兩日異動，算一次供異動清單 + 共同榜共用
     codes = []
 
     for e in etfs:
-        dates = repo.get_data_dates(e.etf_code)
+        dates = repo.get_data_dates(e.etf_code)   # 取一次；prev_date 直接由序列取得
         if not dates:
             continue
         codes.append(e.etf_code)
         latest = dates[0]
-        prev_date, _ = latest_two_dates(repo, e.etf_code)
+        prev_date = dates[1] if len(dates) >= 2 else None
         items = repo.get_holdings(e.etf_code, latest)
         holdings[e.etf_code] = {
             "data_date": latest,
@@ -56,8 +57,10 @@ def build_payload(repo: SqliteRepository, etf_type: str = "stock", min_etfs: int
 
         if prev_date:
             prev = repo.get_holdings(e.etf_code, prev_date)
-            ds = diff_service.compute_diffs(e.etf_code, prev_date, latest, prev, items, created)
-            ds = [d for d in ds if d.change_type != "無異動"]
+            ds = [d for d in
+                  diff_service.compute_diffs(e.etf_code, prev_date, latest, prev, items, created)
+                  if d.change_type != CHANGE_NONE]
+            diffs_by_code[e.etf_code] = ds   # 供 common_moves 共用，免得再算一遍
             diffs[e.etf_code] = {
                 "from_date": prev_date, "to_date": latest,
                 "items": [
@@ -77,7 +80,8 @@ def build_payload(repo: SqliteRepository, etf_type: str = "stock", min_etfs: int
             {"stock_id": m.stock_id, "stock_name": m.stock_name, "direction": m.direction,
              "etf_count": m.etf_count, "etf_codes": m.etf_codes,
              "total_shares_diff": m.total_shares_diff}
-            for m in aggregate.common_moves(repo, codes, direction, created, min_etfs=min_etfs)
+            for m in aggregate.common_moves(repo, codes, direction, created,
+                                            min_etfs=min_etfs, diffs_by_code=diffs_by_code)
         ]
 
     return {

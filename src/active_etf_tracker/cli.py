@@ -33,9 +33,16 @@ from .services import aggregate, diff_service
 from .services.trading_date import latest_two_dates
 
 
+_REPO: SqliteRepository | None = None
+
+
 def _repo() -> SqliteRepository:
-    config.ensure_dirs()
-    return SqliteRepository()
+    """回傳行程內共用的 Repository，避免 run 內各子指令重複建表/重連。"""
+    global _REPO
+    if _REPO is None:
+        config.ensure_dirs()
+        _REPO = SqliteRepository()
+    return _REPO
 
 
 def cmd_update_list(args) -> int:
@@ -64,8 +71,9 @@ def _target_etfs(repo: SqliteRepository, args):
 
 def _adhoc(code: str):
     from .models import ActiveEtf
+    ts = now_iso()
     return ActiveEtf(etf_code=code, etf_name=code, etf_type=twse_list.classify_etf_type(code),
-                     moneydj_url=config.moneydj_url(code))
+                     moneydj_url=config.moneydj_url(code), first_seen_at=ts, last_seen_at=ts)
 
 
 def cmd_fetch(args) -> int:
@@ -76,6 +84,9 @@ def cmd_fetch(args) -> int:
         return 1
     print(f"[fetch] 準備抓取 {len(targets)} 檔 ETF 持股 …")
     for e in targets:
+        # 確保 ETF 先存在於 active_etfs，避免 --etf 指定的臨時代號其快照變成
+        # 查不到母表的孤兒資料（web_export 只列 active_etfs 內的股票型 ETF）。
+        repo.upsert_etf(e)
         raw = config.RAW_DIR / f"moneydj_{e.etf_code}_{today_iso()}.html"
         try:
             data_date, snaps, pages = moneydj.scrape_holdings(e.etf_code, save_raw_to=raw)
@@ -113,7 +124,6 @@ def cmd_diff(args) -> int:
             e.etf_code, prev_date, latest, prev, curr, created,
             include_unchanged=args.include_unchanged,
         )
-        repo.upsert_diffs(diffs)
         changed = [d for d in diffs if d.change_type != "無異動"]
         print(f"   {e.etf_code}  ✓ {prev_date} → {latest}：{len(changed)} 筆異動")
         for d in changed[:20]:
@@ -170,7 +180,11 @@ def cmd_export(args) -> int:
             print(f"[export] {e.etf_code} 持股({dates[0]}) → {p}")
         prev_date, latest = latest_two_dates(repo, e.etf_code)
         if prev_date and latest:
-            diffs = repo.get_diffs(e.etf_code, prev_date, latest)
+            prev = repo.get_holdings(e.etf_code, prev_date)
+            curr = repo.get_holdings(e.etf_code, latest)
+            diffs = [d for d in diff_service.compute_diffs(
+                         e.etf_code, prev_date, latest, prev, curr, now_iso())
+                     if d.change_type != "無異動"]
             p = export_diffs(e.etf_code, prev_date, latest, diffs)
             print(f"[export] {e.etf_code} 異動({prev_date}→{latest}) → {p}")
     return 0

@@ -103,3 +103,21 @@ def compute_diffs(
     }
     diffs.sort(key=lambda d: (order.get(d.change_type, 9), -abs(d.shares_diff or 0.0)))
     return diffs
+
+
+def compute_latest_diffs(repo, etf_code: str, created_at: str,
+                         include_unchanged: bool = False) -> list[HoldingDiff]:
+    """取單檔 ETF「最新兩個資料日期」的異動（即時計算，唯一真相來源）。
+
+    不足兩個資料日期時回傳空清單。被 aggregate / web_export / cli export 共用，
+    避免各處各自重撈快照、重算 diff。
+    """
+    from .trading_date import latest_two_dates  # 延遲匯入避免模組載入順序問題
+
+    prev_date, latest = latest_two_dates(repo, etf_code)
+    if not prev_date or not latest:
+        return []
+    prev = repo.get_holdings(etf_code, prev_date)
+    curr = repo.get_holdings(etf_code, latest)
+    return compute_diffs(etf_code, prev_date, latest, prev, curr, created_at,
+                         include_unchanged=include_unchanged)

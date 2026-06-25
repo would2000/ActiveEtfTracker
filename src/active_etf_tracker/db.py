@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Iterable, Iterator, Optional
 
 from . import config
-from .models import ActiveEtf, HoldingDiff, HoldingSnapshot
+from .models import ActiveEtf, HoldingSnapshot
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS active_etfs (
@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS etf_holdings_snapshot (
     stock_id TEXT NOT NULL,
     stock_name TEXT NOT NULL,
     weight_pct REAL,
-    shares REAL,
+    shares INTEGER,                       -- 股數本質為整數；INTEGER affinity 會把 1100000.0 無損存成整數
     source_name TEXT NOT NULL,
     source_url TEXT NOT NULL,
     fetched_at TEXT NOT NULL,
@@ -36,27 +36,24 @@ CREATE TABLE IF NOT EXISTS etf_holdings_snapshot (
     PRIMARY KEY (etf_code, data_date, stock_id, source_name)
 );
 
-CREATE TABLE IF NOT EXISTS etf_holdings_diff (
-    etf_code TEXT NOT NULL,
-    from_date TEXT NOT NULL,
-    to_date TEXT NOT NULL,
-    stock_id TEXT NOT NULL,
-    stock_name TEXT,
-    change_type TEXT NOT NULL,
-    old_weight_pct REAL,
-    new_weight_pct REAL,
-    weight_diff_pct REAL,
-    old_shares REAL,
-    new_shares REAL,
-    shares_diff REAL,
-    source_name TEXT,
-    created_at TEXT NOT NULL,
-    PRIMARY KEY (etf_code, from_date, to_date, stock_id)
-);
+-- idx_snapshot_etf_date 與主鍵 (etf_code, data_date, stock_id, source_name) 的最左
+-- 前綴重疊，查詢用不到卻增加每次寫入成本，移除之（DROP 讓既有 DB 也一併清掉）。
+DROP INDEX IF EXISTS idx_snapshot_etf_date;
 
-CREATE INDEX IF NOT EXISTS idx_snapshot_etf_date
-    ON etf_holdings_snapshot (etf_code, data_date);
+-- diff 已改為即時計算、不再持久化；清掉既有 DB 殘留的舊表（見上方說明）。
+DROP TABLE IF EXISTS etf_holdings_diff;
 """
+
+# 註：持股異動 (diff) 不再持久化。歷史上曾有 etf_holdings_diff 表，但 diff 可由
+# 兩個資料日期的 snapshot 即時算出（見 services/diff_service.compute_diffs），
+# 持久化反而會在 snapshot 重抓後變成過期髒資料、形成雙真相來源，故移除。
+
+# 明列查詢欄位（順序對應 dataclass 欄位），避免 SELECT * 在日後加欄位時把非預期
+# 欄位灌進 ActiveEtf(**dict(r)) / HoldingSnapshot(**dict(r)) 而拋 TypeError。
+_ETF_COLS = ("etf_code, etf_name, etf_type, issuer, twse_url, moneydj_url, "
+             "is_active, first_seen_at, last_seen_at")
+_SNAP_COLS = ("etf_code, data_date, stock_id, stock_name, weight_pct, shares, "
+              "source_name, source_url, fetched_at, raw_hash")
 
 
 class SqliteRepository:
@@ -69,8 +66,12 @@ class SqliteRepository:
 
     @contextmanager
     def _conn(self) -> Iterator[sqlite3.Connection]:
-        conn = sqlite3.connect(self.db_path)
+        # timeout：本機伺服器跑更新（子行程寫入）與手動 CLI 讀取若重疊，
+        #          以 busy timeout 等待鎖釋放，避免直接 "database is locked"。
+        # synchronous=NORMAL：爬取資料可重抓、可重建，放寬 fsync 換取批次寫入速度。
+        conn = sqlite3.connect(self.db_path, timeout=30.0)
         conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA synchronous=NORMAL")
         try:
             yield conn
             conn.commit()
@@ -105,7 +106,7 @@ class SqliteRepository:
             )
 
     def get_etfs(self, etf_type: Optional[str] = None, active_only: bool = True) -> list[ActiveEtf]:
-        q = "SELECT * FROM active_etfs WHERE 1=1"
+        q = f"SELECT {_ETF_COLS} FROM active_etfs WHERE 1=1"
         args: list = []
         if active_only:
             q += " AND is_active=1"
@@ -119,10 +120,13 @@ class SqliteRepository:
 
     # ---------- snapshots ----------
     def upsert_snapshots(self, snaps: Iterable[HoldingSnapshot]) -> int:
+        # 防呆：data_date / etf_code / stock_id 任一為空就跳過，避免空字串日期
+        # 污染 get_data_dates 與 latest_two_dates（解析失敗時 data_date 可能為 ""）。
         rows = [
             (s.etf_code, s.data_date, s.stock_id, s.stock_name, s.weight_pct,
              s.shares, s.source_name, s.source_url, s.fetched_at, s.raw_hash)
             for s in snaps
+            if s.data_date and s.etf_code and s.stock_id
         ]
         if not rows:
             return 0
@@ -159,53 +163,9 @@ class SqliteRepository:
                      source_name: str = config.SOURCE_MONEYDJ) -> list[HoldingSnapshot]:
         with self._conn() as c:
             rows = c.execute(
-                """SELECT * FROM etf_holdings_snapshot
-                   WHERE etf_code=? AND data_date=? AND source_name=?
-                   ORDER BY weight_pct DESC""",
+                f"""SELECT {_SNAP_COLS} FROM etf_holdings_snapshot
+                    WHERE etf_code=? AND data_date=? AND source_name=?
+                    ORDER BY weight_pct DESC""",
                 (etf_code, data_date, source_name),
             ).fetchall()
         return [HoldingSnapshot(**dict(r)) for r in rows]
-
-    # ---------- diffs ----------
-    def upsert_diffs(self, diffs: Iterable[HoldingDiff]) -> int:
-        rows = [
-            (d.etf_code, d.from_date, d.to_date, d.stock_id, d.stock_name, d.change_type,
-             d.old_weight_pct, d.new_weight_pct, d.weight_diff_pct,
-             d.old_shares, d.new_shares, d.shares_diff, d.source_name, d.created_at)
-            for d in diffs
-        ]
-        if not rows:
-            return 0
-        with self._conn() as c:
-            c.executemany(
-                """
-                INSERT INTO etf_holdings_diff
-                    (etf_code, from_date, to_date, stock_id, stock_name, change_type,
-                     old_weight_pct, new_weight_pct, weight_diff_pct,
-                     old_shares, new_shares, shares_diff, source_name, created_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-                ON CONFLICT(etf_code, from_date, to_date, stock_id) DO UPDATE SET
-                    stock_name=excluded.stock_name,
-                    change_type=excluded.change_type,
-                    old_weight_pct=excluded.old_weight_pct,
-                    new_weight_pct=excluded.new_weight_pct,
-                    weight_diff_pct=excluded.weight_diff_pct,
-                    old_shares=excluded.old_shares,
-                    new_shares=excluded.new_shares,
-                    shares_diff=excluded.shares_diff,
-                    source_name=excluded.source_name,
-                    created_at=excluded.created_at
-                """,
-                rows,
-            )
-        return len(rows)
-
-    def get_diffs(self, etf_code: str, from_date: str, to_date: str) -> list[HoldingDiff]:
-        with self._conn() as c:
-            rows = c.execute(
-                """SELECT * FROM etf_holdings_diff
-                   WHERE etf_code=? AND from_date=? AND to_date=?
-                   ORDER BY change_type, ABS(COALESCE(shares_diff,0)) DESC""",
-                (etf_code, from_date, to_date),
-            ).fetchall()
-        return [HoldingDiff(**dict(r)) for r in rows]

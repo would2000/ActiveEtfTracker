@@ -18,8 +18,7 @@ from ..models import (
     CHANGE_REMOVED,
     HoldingDiff,
 )
-from .diff_service import compute_diffs
-from .trading_date import latest_two_dates
+from .diff_service import compute_latest_diffs
 
 ADD_TYPES = {CHANGE_ADD, CHANGE_NEW}
 REDUCE_TYPES = {CHANGE_REDUCE, CHANGE_REMOVED}
@@ -48,31 +47,29 @@ class CommonMove:
     moves: list[EtfMove] = field(default_factory=list)
 
 
-def _latest_diffs(repo: SqliteRepository, etf_code: str, created_at: str) -> list[HoldingDiff]:
-    """取單檔 ETF 最新兩個資料日期的異動（即時計算，不依賴 diff 指令）。"""
-    prev_date, latest = latest_two_dates(repo, etf_code)
-    if not prev_date or not latest:
-        return []
-    prev = repo.get_holdings(etf_code, prev_date)
-    curr = repo.get_holdings(etf_code, latest)
-    return compute_diffs(etf_code, prev_date, latest, prev, curr, created_at)
-
-
 def common_moves(
     repo: SqliteRepository,
     etf_codes: Iterable[str],
     direction: str,
     created_at: str,
     min_etfs: int = 2,
+    diffs_by_code: Optional[dict[str, list[HoldingDiff]]] = None,
 ) -> list[CommonMove]:
-    """計算共同加碼 (direction='add') 或共同減碼 (direction='reduce') 清單。"""
+    """計算共同加碼 (direction='add') 或共同減碼 (direction='reduce') 清單。
+
+    diffs_by_code 若提供，直接使用已算好的「每檔 ETF 最新兩日異動」，避免重撈
+    快照、重算 diff（共同加碼/減碼兩個方向、以及 web_export 的每檔異動可共用同一份）。
+    未提供時則自行即時計算（CLI common 指令、單元測試走此路徑）。
+    """
     types = ADD_TYPES if direction == "add" else REDUCE_TYPES
     label = "加碼" if direction == "add" else "減碼"
 
     # stock_id -> 聚合
     bucket: dict[str, CommonMove] = {}
     for code in etf_codes:
-        for d in _latest_diffs(repo, code, created_at):
+        diffs = (diffs_by_code.get(code, []) if diffs_by_code is not None
+                 else compute_latest_diffs(repo, code, created_at))
+        for d in diffs:
             if d.change_type not in types:
                 continue
             cm = bucket.get(d.stock_id)
