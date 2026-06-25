@@ -70,7 +70,7 @@ python -m active_etf_tracker.cli dashboard
 ## 每日資料更新（手動執行）
 台股收盤後，於交易日跑 `scripts/daily_run.sh`（會自動啟用 venv、跑 `run`，再做資料驗證）：
 ```bash
-cd /Users/xiaochenyan/Desktop/Project/ActiveEtfTracker
+cd ~/ActiveEtfTracker          # 改成你 clone 的專案路徑
 scripts/daily_run.sh            # 全部股票型 A
 scripts/daily_run.sh --limit 5  # 測試
 tail -f data/daily_run.log      # 看執行紀錄

@@ -117,7 +117,7 @@ MoneyDJ 每檔頁面同一時間只揭露「一個」最新資料日期。所以
 ## 7. 每日資料更新（手動執行）
 本專案**不使用背景排程**，於每個交易日收盤後手動跑一次即可：
 ```bash
-cd /Users/xiaochenyan/Desktop/Project/ActiveEtfTracker
+cd ~/ActiveEtfTracker          # 改成你 clone 的專案路徑
 scripts/daily_run.sh            # 啟用 venv → 跑 run → 資料驗證
 scripts/daily_run.sh --limit 5  # 測試
 tail -f data/daily_run.log      # 看執行紀錄
