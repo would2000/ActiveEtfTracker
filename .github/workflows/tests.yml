@@ -1,0 +1,26 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      # 這兩個單元測試只用到標準函式庫＋專案自身，毋須安裝 requirements
+      # （不必拉 playwright/pandas），CI 因此輕量且快速。
+      - name: Run unit tests
+        run: |
+          python tests/test_diff_service.py
+          python tests/test_aggregate.py
