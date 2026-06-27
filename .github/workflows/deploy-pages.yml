@@ -1,0 +1,41 @@
+name: deploy-pages
+
+# 把靜態儀表板（web/）部署到 GitHub Pages。
+# web/data.json 已隨 repo 一起 commit，Pages 偵測不到 /api/status，
+# 故頁面右上「更新資料」按鈕會自動隱藏（純展示，無後端）。
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "web/**"
+      - ".github/workflows/deploy-pages.yml"
+  workflow_dispatch:
+
+# 允許此 workflow 寫入 Pages，並用 OIDC 完成部署
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 同一時間只跑一個部署；新的 push 取代排隊中的舊部署
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - name: Upload web/ as Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: web
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
