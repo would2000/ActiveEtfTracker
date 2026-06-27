@@ -1,0 +1,85 @@
+name: refresh-data
+
+# 每個台股交易日傍晚自動抓取最新持股快照 → 比對 → 重新產生 web/data.json，
+# 只有「實質資料」有變動時才 commit + 重新部署 GitHub Pages。
+#
+# 排程時間：台北 18:00–22:00 每小時各一次（= UTC 10:00–14:00），週一至週五。
+# 為什麼是這個窗口：來源（MoneyDJ）每天更新時間不固定，傍晚多抓幾次以盡早抓到當日新資料；
+# 同一個資料日期重複抓會被視為「無實質變動」而略過 commit，不會灌爆 git 歷史。
+#
+# 注意：
+# - SQLite DB（data/sqlite/*.sqlite）需跨次保留，diff 才比得出「最新兩個資料日期」，
+#   故本流程會把 DB 一併 commit（用 -f 蓋過 .gitignore）。
+# - GitHub Actions cron 為 UTC，且尖峰時可能延遲數分鐘觸發，屬正常現象。
+
+on:
+  schedule:
+    - cron: "0 10-14 * * 1-5"
+  workflow_dispatch: # 允許在 Actions 頁手動觸發（測試用）
+
+permissions:
+  contents: write # 需 push data.json + DB
+  pages: write # 部署 Pages
+  id-token: write # Pages OIDC
+
+# 與 deploy-pages 共用同一個 Pages 部署佇列，避免兩個流程同時部署衝突
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 安裝相依套件與 Chromium
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          python -m playwright install --with-deps chromium
+
+      - name: 抓取 → 比對 → 產生 data.json
+        env:
+          PYTHONPATH: src
+        run: python -m active_etf_tracker.cli run
+
+      - name: 有實質變動才 commit + push
+        id: commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # 比較時忽略 generated_at（每次都會變），只看真正的持股／異動內容
+          norm() { python3 -c "import json,sys; d=json.load(open(sys.argv[1])); d.pop('generated_at', None); print(json.dumps(d, sort_keys=True, ensure_ascii=False))" "$1"; }
+          git show HEAD:web/data.json > /tmp/old.json 2>/dev/null || echo '{}' > /tmp/old.json
+          if [ "$(norm web/data.json)" = "$(norm /tmp/old.json)" ]; then
+            echo "資料無實質變動（同一資料日期），略過 commit／部署。"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git add -f web/data.json data/sqlite/*.sqlite
+          git commit -m "data: 自動更新持股快照（$(date -u +%Y-%m-%dT%H:%MZ) UTC）"
+          git push
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: 設定 Pages
+        if: steps.commit.outputs.changed == 'true'
+        uses: actions/configure-pages@v5
+
+      - name: 上傳 web/ 作為 Pages artifact
+        if: steps.commit.outputs.changed == 'true'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: web
+
+      - name: 部署到 GitHub Pages
+        id: deployment
+        if: steps.commit.outputs.changed == 'true'
+        uses: actions/deploy-pages@v4
