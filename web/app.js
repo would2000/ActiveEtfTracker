@@ -3,6 +3,21 @@
 /* ============ 工具 ============ */
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+
+// 任何來自資料檔的文字塞進 innerHTML 前都必須先轉義，避免 XSS。
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (char) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  }[char]));
+}
+const esc = escapeHtml;
+// 數字欄位一律先轉型，不直接信任資料來源（避免字串注入到模板）
+const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : null; };
+const escNum = (v, digits) => { const n = num(v); return n == null ? '—' : (digits == null ? n : n.toFixed(digits)); };
 const fmt = (n) => (n == null ? '—' : Math.round(n).toLocaleString('en-US'));
 const fmtSigned = (n) => (n == null ? '—' : (n >= 0 ? '+' : '') + Math.round(n).toLocaleString('en-US'));
 const pct = (n) => (n == null ? '—' : n.toFixed(2) + '%');
@@ -42,15 +57,19 @@ let commonBarIndex = {};
 const state = { detailCode: null, diffFilter: 'all', sortKey: 'weight_pct', sortDir: -1, commonDir: 'add' };
 
 /* ============ 啟動 ============ */
+// 載入順序：真實資料 → 範例假資料（公開站台用）→ 明確錯誤訊息。
+// 公開 repo 不含第三方抓取資料，故 data.json 可能不存在，需可靠 fallback。
+const DATA_SOURCES = ['data.json', 'examples/sample_data.json', 'sample_data.json'];
+let USING_SAMPLE = false;
+
 init();
 async function init() {
-  try {
-    const res = await fetch('data.json', { cache: 'no-store' });
-    DATA = await res.json();
-  } catch (e) {
-    document.body.innerHTML = '<p style="padding:40px;color:#9aa6b8;font-family:sans-serif">無法載入 data.json，請先執行：<code>python -m active_etf_tracker.cli dashboard</code>，並以 <code>--serve</code> 或本機伺服器開啟此頁。</p>';
+  DATA = await loadData();
+  if (!DATA) {
+    showFatal('找不到資料檔。請先執行資料更新流程產生 web/data.json（例如 <code>python -m active_etf_tracker.cli dashboard</code>）。本專案公開 repo 不包含第三方資料集；公開站台僅顯示 examples/sample_data.json 範例資料。');
     return;
   }
+  if (USING_SAMPLE) showSampleBanner();
   renderTop();
   setupTabs();
   renderOverview();
@@ -58,6 +77,37 @@ async function init() {
   setupCommon();
   setupRefresh();
   window.addEventListener('resize', () => { weightChart && weightChart.resize(); commonChart && commonChart.resize(); });
+}
+
+// 依序嘗試各資料來源，回傳第一個成功解析的 JSON；全部失敗回 null。
+async function loadData() {
+  for (let i = 0; i < DATA_SOURCES.length; i++) {
+    const src = DATA_SOURCES[i];
+    try {
+      const res = await fetch(src, { cache: 'no-store' });
+      if (!res.ok) continue;
+      const json = await res.json();
+      USING_SAMPLE = (i > 0);   // 非第一順位（data.json）即視為範例資料
+      return json;
+    } catch (e) { /* 換下一個來源 */ }
+  }
+  return null;
+}
+
+function showFatal(msgHtml) {
+  const box = document.createElement('div');
+  box.style.cssText = 'padding:40px;color:#9aa6b8;font-family:sans-serif;line-height:1.7;max-width:720px;margin:40px auto';
+  // msgHtml 為本程式內建的固定字串（非來自資料來源），故可直接設定
+  box.innerHTML = msgHtml;
+  document.body.replaceChildren(box);
+}
+
+function showSampleBanner() {
+  const bar = document.createElement('div');
+  bar.id = 'sample-banner';
+  bar.style.cssText = 'background:#3a2f12;color:#e7b94e;text-align:center;padding:7px 14px;font-size:13px;font-family:sans-serif;border-bottom:1px solid #5a4a1e';
+  bar.textContent = '⚠ 目前顯示的是「範例假資料」(examples/sample_data.json)，非真實 ETF 資料。請在本機執行資料更新流程產生 web/data.json。';
+  document.body.prepend(bar);
 }
 
 /* ============ 頂部 KPI ============ */
@@ -102,15 +152,15 @@ function renderOverview(filter = '') {
   grid.innerHTML = list.map(e => {
     const d = DATA.diffs[e.etf_code];
     const diffN = d ? d.items.length : 0;
-    return `<div class="etf-card" data-code="${e.etf_code}">
+    return `<div class="etf-card" data-code="${esc(e.etf_code)}">
       <div class="ec-top">
-        <span class="ec-code">${e.etf_code}</span>
-        <span class="ec-badge stock">${e.etf_type === 'stock' ? '股票型' : e.etf_type || '—'}</span>
+        <span class="ec-code">${esc(e.etf_code)}</span>
+        <span class="ec-badge stock">${esc(e.etf_type === 'stock' ? '股票型' : e.etf_type || '—')}</span>
       </div>
-      <div class="ec-name">${e.etf_name || ''}</div>
+      <div class="ec-name">${esc(e.etf_name || '')}</div>
       <div class="ec-stats">
-        <div class="ec-stat"><div class="v">${e.holding_count}</div><div class="l">持股檔數</div></div>
-        <div class="ec-stat"><div class="v" style="font-size:13px">${e.latest_date}</div><div class="l">資料日期</div></div>
+        <div class="ec-stat"><div class="v">${escNum(e.holding_count)}</div><div class="l">持股檔數</div></div>
+        <div class="ec-stat"><div class="v" style="font-size:13px">${esc(e.latest_date)}</div><div class="l">資料日期</div></div>
         <div class="ec-stat ec-diff"><div class="v">${diffN || '—'}</div><div class="l">當日異動</div></div>
       </div>
     </div>`;
@@ -122,7 +172,7 @@ $('#etf-search').addEventListener('input', (e) => renderOverview(e.target.value)
 /* ============ 2. 單檔 ============ */
 function setupDetail() {
   const sel = $('#etf-select');
-  sel.innerHTML = DATA.etfs.map(e => `<option value="${e.etf_code}">${e.etf_code}　${e.etf_name || ''}</option>`).join('');
+  sel.innerHTML = DATA.etfs.map(e => `<option value="${esc(e.etf_code)}">${esc(e.etf_code)}　${esc(e.etf_name || '')}</option>`).join('');
   sel.addEventListener('change', () => openDetail(sel.value, false));
   weightChart = echarts.init($('#weight-chart'), null, { renderer: 'canvas' });
   weightChart.on('click', (p) => { if (p.data && p.data.sid) highlightRow(p.data.sid); });
@@ -136,10 +186,10 @@ function openDetail(code, switchTab = true) {
   const h = DATA.holdings[code], d = DATA.diffs[code];
   // meta
   $('#detail-meta').innerHTML = `
-    <div class="dm"><span class="v">${h.data_date}</span><span class="l">資料日期</span></div>
-    <div class="dm"><span class="v">${e.holding_count}</span><span class="l">持股檔數</span></div>
+    <div class="dm"><span class="v">${esc(h.data_date)}</span><span class="l">資料日期</span></div>
+    <div class="dm"><span class="v">${escNum(e.holding_count)}</span><span class="l">持股檔數</span></div>
     <div class="dm"><span class="v">${d ? d.items.length : '—'}</span><span class="l">當日異動</span></div>
-    <div class="dm"><span class="v" style="font-size:13px">${e.issuer || '—'}</span><span class="l">投信</span></div>`;
+    <div class="dm"><span class="v" style="font-size:13px">${esc(e.issuer || '—')}</span><span class="l">投信</span></div>`;
   $('#diff-date').textContent = d ? `${d.from_date} → ${d.to_date}` : '尚無前一日可比對';
   $('#holding-count').textContent = `共 ${h.items.length} 檔`;
   renderWeightChart(h);
@@ -160,7 +210,7 @@ function renderWeightChart(h) {
   weightChart.setOption({
     tooltip: {
       trigger: 'item', backgroundColor: COLOR.panel, borderColor: COLOR.line, textStyle: { color: COLOR.ink },
-      formatter: (p) => `${p.data.sid ? p.data.sid + ' ' : ''}${p.name}<br/><b>${pct(p.value)}</b>（占圖 ${p.percent}%）`,
+      formatter: (p) => `${p.data.sid ? esc(p.data.sid) + ' ' : ''}${esc(p.name)}<br/><b>${pct(num(p.value))}</b>（占圖 ${escNum(p.percent)}%）`,
     },
     series: [{
       type: 'pie', radius: ['46%', '76%'], center: ['50%', '50%'],
@@ -178,12 +228,12 @@ function renderWeightChart(h) {
   // 右側圖例清單：色塊 + 名稱(可省略號) + 代號 + 權重；懸停高亮對應扇形
   const legend = $('#weight-legend');
   legend.innerHTML = data.map((d, i) => `
-    <div class="wl-row" data-i="${i}" data-sid="${d.sid || ''}" title="${d.name}${d.sid ? ' (' + d.sid + ')' : ''}　${pct(d.value)}">
+    <div class="wl-row" data-i="${i}" data-sid="${esc(d.sid || '')}" title="${esc(d.name)}${d.sid ? ' (' + esc(d.sid) + ')' : ''}　${pct(num(d.value))}">
       <span class="wl-rank">${d.sid ? i + 1 : ''}</span>
       <span class="wl-sw" style="background:${d.itemStyle.color}"></span>
-      <span class="wl-name">${d.name}</span>
-      <span class="wl-code">${d.sid || ''}</span>
-      <span class="wl-pct">${d.value.toFixed(2)}%</span>
+      <span class="wl-name">${esc(d.name)}</span>
+      <span class="wl-code">${esc(d.sid || '')}</span>
+      <span class="wl-pct">${escNum(d.value, 2)}%</span>
     </div>`).join('');
   $$('.wl-row', legend).forEach(row => {
     const i = +row.dataset.i;
@@ -231,10 +281,12 @@ function renderDiffList(d) {
   wrap.innerHTML = items.map(x => {
     const cl = TYPE_CLASS[x.change_type];
     const up = (x.shares_diff || 0) >= 0;
-    return `<div class="diff-row ${cl}" data-sid="${x.stock_id}">
-      <div class="dr-name"><div class="n">${x.stock_name || ''}</div><div class="c">${x.stock_id}</div></div>
-      <span class="dr-tag ${cl}">${x.change_type}</span>
-      <div class="dr-val ${up ? 'up' : 'down'}">${fmtSignedLots(x.shares_diff)} 張<br><span style="font-size:10px;color:var(--ink-faint)">${x.weight_diff_pct != null ? (x.weight_diff_pct >= 0 ? '+' : '') + x.weight_diff_pct + '%' : ''}</span></div>
+    const wd = num(x.weight_diff_pct);
+    const wdTxt = wd == null ? '' : (wd >= 0 ? '+' : '') + wd + '%';
+    return `<div class="diff-row ${cl}" data-sid="${esc(x.stock_id)}">
+      <div class="dr-name"><div class="n">${esc(x.stock_name || '')}</div><div class="c">${esc(x.stock_id)}</div></div>
+      <span class="dr-tag ${cl}">${esc(x.change_type)}</span>
+      <div class="dr-val ${up ? 'up' : 'down'}">${fmtSignedLots(num(x.shares_diff))} 張<br><span style="font-size:10px;color:var(--ink-faint)">${wdTxt}</span></div>
     </div>`;
   }).join('') || '<p class="empty">無此類異動</p>';
 }
@@ -271,16 +323,16 @@ function sortAndRenderTable() {
   if (th) th.classList.add(dir > 0 ? 'sort-asc' : 'sort-desc');
   tb.innerHTML = rows.map(r => {
     const tag = r.change_type
-      ? `<span class="mini-tag ${TYPE_CLASS[r.change_type]}">${r.change_type}</span>`
+      ? `<span class="mini-tag ${TYPE_CLASS[r.change_type] || 'flat'}">${esc(r.change_type)}</span>`
       : '<span class="mini-tag flat">—</span>';
     const sd = r.shares_diff != null
-      ? `<span class="${r.shares_diff >= 0 ? 'cell-up' : 'cell-down'}">${fmtSignedLots(r.shares_diff)}</span>` : '—';
-    return `<tr data-sid="${r.stock_id}">
-      <td class="num">${r.idx}</td>
-      <td class="num">${r.stock_id}</td>
-      <td>${r.stock_name || ''}</td>
-      <td class="num">${r.weight_pct != null ? r.weight_pct.toFixed(2) : '—'}</td>
-      <td class="num">${fmtLots(r.shares)}</td>
+      ? `<span class="${num(r.shares_diff) >= 0 ? 'cell-up' : 'cell-down'}">${fmtSignedLots(num(r.shares_diff))}</span>` : '—';
+    return `<tr data-sid="${esc(r.stock_id)}">
+      <td class="num">${escNum(r.idx)}</td>
+      <td class="num">${esc(r.stock_id)}</td>
+      <td>${esc(r.stock_name || '')}</td>
+      <td class="num">${escNum(r.weight_pct, 2)}</td>
+      <td class="num">${fmtLots(num(r.shares))}</td>
       <td class="num">${sd}</td>
       <td>${tag}</td>
     </tr>`;
@@ -318,7 +370,7 @@ function renderCommon() {
   commonChart.setOption({
     grid: { left: 95, right: 64, top: 12, bottom: 12 },
     tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, backgroundColor: COLOR.panel, borderColor: COLOR.line, textStyle: { color: COLOR.ink },
-      formatter: (ps) => { const p = ps[0]; return `${p.data.sid} ${p.name}<br/>同向 <b>${p.value}</b> 檔<br/>張數合計 ${fmtSignedLots(p.data.tot)} 張`; } },
+      formatter: (ps) => { const p = ps[0]; return `${esc(p.data.sid)} ${esc(p.name)}<br/>同向 <b>${escNum(p.value)}</b> 檔<br/>張數合計 ${fmtSignedLots(num(p.data.tot))} 張`; } },
     xAxis: { type: 'value', axisLabel: { color: COLOR.dim }, splitLine: { lineStyle: { color: COLOR.line } } },
     yAxis: { type: 'category', data: top.map(x => x.stock_name), axisLabel: { color: COLOR.dim, fontSize: 11 }, axisLine: { lineStyle: { color: COLOR.line } } },
     series: [{
@@ -331,11 +383,11 @@ function renderCommon() {
   }, true);
   // 清單
   $('#common-list').innerHTML = list.map((x, i) => `
-    <div class="cm-row" data-sid="${x.stock_id}">
+    <div class="cm-row" data-sid="${esc(x.stock_id)}">
       <span class="cm-rank">${i + 1}</span>
-      <div class="cm-main"><div class="n">${x.stock_name || ''} <span style="color:var(--ink-faint);font-family:var(--mono);font-size:11px">${x.stock_id}</span></div>
-        <div class="codes">${x.etf_codes.join(' · ')}</div></div>
-      <div class="cm-count ${add ? 'up' : 'down'}">${x.etf_count}<small> 檔</small></div>
+      <div class="cm-main"><div class="n">${esc(x.stock_name || '')} <span style="color:var(--ink-faint);font-family:var(--mono);font-size:11px">${esc(x.stock_id)}</span></div>
+        <div class="codes">${(Array.isArray(x.etf_codes) ? x.etf_codes : []).map(esc).join(' · ')}</div></div>
+      <div class="cm-count ${add ? 'up' : 'down'}">${escNum(x.etf_count)}<small> 檔</small></div>
     </div>`).join('') || '<p class="empty">無共同操作（需多檔 ETF 皆有兩個資料日期）</p>';
   $$('.cm-row').forEach(r => r.addEventListener('click', () => {
     flashRow(r);
@@ -418,7 +470,7 @@ async function refreshData() {
     DATA = await r.json();
   } catch (e) { return; }
   renderTop();
-  $('#etf-select').innerHTML = DATA.etfs.map(e => `<option value="${e.etf_code}">${e.etf_code}　${e.etf_name || ''}</option>`).join('');
+  $('#etf-select').innerHTML = DATA.etfs.map(e => `<option value="${esc(e.etf_code)}">${esc(e.etf_code)}　${esc(e.etf_name || '')}</option>`).join('');
   renderOverview($('#etf-search').value || '');
   if (state.detailCode && DATA.holdings[state.detailCode]) openDetail(state.detailCode, false);
   else if (DATA.etfs.length) openDetail(DATA.etfs[0].etf_code, false);

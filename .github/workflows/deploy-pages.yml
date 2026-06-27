@@ -1,24 +1,27 @@
 name: deploy-pages
 
-# 把靜態儀表板（web/）部署到 GitHub Pages。
-# web/data.json 已隨 repo 一起 commit，Pages 偵測不到 /api/status，
-# 故頁面右上「更新資料」按鈕會自動隱藏（純展示，無後端）。
+# 把「程式碼 + 範例假資料」的靜態儀表板部署到 GitHub Pages。
+#
+# 重要：公開站台「不含」第三方抓取資料。
+# web/data.json 已不在版控（見 .gitignore），CI checkout 不會有它，
+# 故前端會 fallback 顯示 examples/sample_data.json 範例假資料。
+# 本流程會把 sample_data.json 複製進待部署目錄，讓 fallback 路徑可解析。
+# Pages 偵測不到 /api/status，頁面右上「更新資料」按鈕自動隱藏。
 
 on:
   push:
     branches: [main]
     paths:
       - "web/**"
+      - "examples/sample_data.json"
       - ".github/workflows/deploy-pages.yml"
   workflow_dispatch:
 
-# 允許此 workflow 寫入 Pages，並用 OIDC 完成部署
 permissions:
   contents: read
   pages: write
   id-token: write
 
-# 同一時間只跑一個部署；新的 push 取代排隊中的舊部署
 concurrency:
   group: pages
   cancel-in-progress: false
@@ -31,11 +34,25 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: 準備待部署目錄（程式碼 + 範例假資料，不含真實 data.json）
+        run: |
+          rm -rf _site
+          cp -r web _site
+          # 保險：即使本機誤把 data.json 留在 web/，也不要部署到公開站台
+          rm -f _site/data.json
+          # 讓前端 fallback 路徑 ./examples/sample_data.json 與 ./sample_data.json 都解析得到
+          mkdir -p _site/examples
+          cp examples/sample_data.json _site/examples/sample_data.json
+          cp examples/sample_data.json _site/sample_data.json
+
       - uses: actions/configure-pages@v5
-      - name: Upload web/ as Pages artifact
+
+      - name: Upload _site as Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: web
+          path: _site
+
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4

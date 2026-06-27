@@ -12,6 +12,32 @@
 > 核心不是爬蟲，而是：**同一檔 ETF、不同資料日期的持股快照比對**。
 > 比對鍵 = `etf_code + data_date + stock_id`；最有意義的訊號是**持有股數變化**（權重變化可能只是股價漲跌）。
 
+## ⚠️ 公開、授權與風險（請先讀）
+
+**專案定位**
+
+> 本專案是主動式 ETF 持股變化追蹤工具，僅供個人研究、學習與非商業用途。
+> 本 repo 公開的是程式碼與範例資料，不公開第三方網站抓取後的完整資料集。
+
+**不是投資建議**
+
+> 本專案資料可能延遲、缺漏或錯誤。
+> 本專案不構成投資建議、投資推薦、要約或招攬。
+> 實際 ETF 持股、成分、權重與公告資訊，請以投信官網、公開說明書、PCF、交易所公告或正式資訊源為準。
+
+**第三方資料授權**
+
+> 使用者須自行確認 TWSE、MoneyDJ、投信官網或其他資料來源的使用條款。
+> 請勿將本工具用於大量抓取、商業資料服務、公開 API、批次下載服務或再散布第三方資料。
+
+**公開 repo 不包含資料**
+
+> 公開版本不包含 `web/data.json`、raw data、SQLite、CSV、XLSX 或任何抓取後完整資料。
+> 如需使用，請在本機自行執行資料更新流程產生 `web/data.json`。
+
+> 📄 延伸閱讀：[docs/open_source_safety.md](docs/open_source_safety.md)（如何安全公開／清除 Git 歷史中的資料）、
+> [docs/data_source_policy.md](docs/data_source_policy.md)（資料來源政策）、[NOTICE.md](NOTICE.md)（授權範圍）。
+
 ## 技術棧
 Python 3.10+ ／ Playwright（Chromium 動態渲染）／ BeautifulSoup ／ SQLite ／ pandas。
 
@@ -51,9 +77,14 @@ python -m active_etf_tracker.cli list                         # 列出 DB 內 ET
 
 ```bash
 python -m active_etf_tracker.cli dashboard --serve   # 匯出 data.json 並開 http://localhost:8000
-# 或只匯出資料（部署到 GitHub Pages 等靜態主機）：
+# 或只匯出資料（本機產生 web/data.json）：
 python -m active_etf_tracker.cli dashboard
 ```
+
+**資料載入順序（前端 fallback）**：`./data.json`（本機真實資料）→ `examples/sample_data.json`
+（範例假資料）→ 找不到時顯示明確提示，**不會白屏**。因公開 repo 不含 `web/data.json`，
+公開站台會落到第二順位顯示範例假資料，並在頂部顯示「範例假資料」橫幅。
+想在本機不抓資料就預覽 UI，可直接開站台即會載入 `examples/sample_data.json`。
 
 ### 頁面上的「更新資料」按鈕
 `dashboard --serve` 啟動的伺服器附帶更新 API，頁面右上的**「更新資料」按鈕**可直接觸發
@@ -81,20 +112,18 @@ tail -f data/daily_run.log      # 看執行紀錄
 
 > 本系統的價值來自**每天累積快照**，交易日收盤後會自動更新（見下）；也可手動跑一次。
 
-## 雲端自動更新（GitHub Actions）
-線上儀表板由 GitHub Actions 自動更新，**毋須本機開機**：
-[.github/workflows/refresh-data.yml](.github/workflows/refresh-data.yml) 於**台股交易日（週一至週五）
-台北 18:00–22:00 每小時各跑一次**（cron 為 UTC `0 10-14 * * 1-5`），流程為
-`抓取 → 比對 → 產生 web/data.json`，**只有實質資料變動時**才 commit 並重新部署 Pages
-（同一資料日期重抓視為無變動而略過，不灌爆 git 歷史）。
+## GitHub Pages（公開站台只放範例資料）
+[.github/workflows/deploy-pages.yml](.github/workflows/deploy-pages.yml) 會把
+**程式碼 + 範例假資料**部署到 GitHub Pages。**公開站台不含任何第三方抓取資料**：
+`web/data.json` 已不在版控，CI 不會有它，前端因此 fallback 顯示 `examples/sample_data.json`。
 
-> 為什麼是傍晚連跑 5 次：來源每日更新時間不固定，傍晚多抓幾次以盡早抓到當日新資料。
-> diff 需要跨次保留「最新兩個資料日期」，故 SQLite DB（`data/sqlite/*.sqlite`）**已納入版控**，
-> 由 Actions 隨快照一併 commit。GitHub cron 為 UTC、尖峰時可能延遲數分鐘觸發，屬正常現象。
+> ⚠️ **本專案不在雲端自動抓取第三方資料、也不把抓取結果發佈到公開站台。**
+> 真實資料一律在**本機**自行執行更新流程產生，僅留在你自己的機器上。
+> （早期曾設定 GitHub Actions 定時抓取並 commit data.json／SQLite，現已移除，以符合「公開 repo / 公開站台不含第三方資料」的原則。）
 
-> ℹ️ **不使用本機背景排程（launchd / cron）。** 早期曾用 launchd 排程，但放在 `~/Desktop`
+> ℹ️ **也不使用本機背景排程（launchd / cron）。** 早期曾用 launchd，但放在 `~/Desktop`
 > 等 macOS 隱私保護（TCC）目錄時，launchd 背景程序無權存取，會以 `Operation not permitted`
-> （結束碼 126）失敗。改為「本機手動執行 + 雲端 GitHub Actions 自動更新」後此限制不再適用。
+> （結束碼 126）失敗。請於交易日收盤後**手動**執行更新。
 
 ## 輸出（data/exports/）
 ```
@@ -123,10 +152,14 @@ src/active_etf_tracker/
 ├─ export.py              # CSV / Excel 匯出
 ├─ web_export.py          # 匯出前端 data.json
 └─ cli.py                 # 命令列入口
-web/                      # 互動式儀表板（index.html / app.js / styles.css / data.json）
+web/                      # 互動式儀表板（index.html / app.js / styles.css）
+                          #   └ data.json 為本機產生檔，不在版控（見 .gitignore）
+examples/sample_data.json # 範例假資料（虛構 ETF/個股），供公開站台與 UI demo
 scripts/daily_run.sh      # 每日更新腳本（手動執行）
 scripts/seed_demo.py      # 產生示範前一日資料以預覽前端
-data/{raw,sqlite,exports} # 原始 HTML / SQLite / 輸出
+data/{raw,sqlite,exports} # 原始 HTML / SQLite / 輸出（皆 .gitignore，不入版控）
+docs/data_source_policy.md、docs/open_source_safety.md   # 資料政策 / 安全公開指南
+NOTICE.md                 # 授權範圍（程式碼 vs 第三方資料）
 tests/test_diff_service.py、tests/test_aggregate.py
 ```
 
@@ -164,4 +197,11 @@ tests/test_diff_service.py、tests/test_aggregate.py
 ## 授權
 著作權人 **TraderXiao**。本專案採 **[CC BY-NC 4.0](LICENSE)**（姓名標示-非商業性）授權，
 使用時須標示著作權人 TraderXiao 並維持非商業性質，詳見 [LICENSE](LICENSE)。
-第三方資料（TWSE、MoneyDJ）之權利歸原來源所有，不在本授權範圍內。
+
+> 本專案採非商業授權，屬於 source-available / non-commercial research project。
+> 由於授權限制商業使用，因此嚴格來說不屬於 OSI 定義的 open-source license。
+
+> 本專案授權只涵蓋本 repo 中的原始碼、文件與範例假資料。
+> 第三方資料來源的內容不屬於本專案授權範圍。
+
+第三方資料（TWSE、MoneyDJ）之權利歸原來源所有，不在本授權範圍內。授權範圍細節見 [NOTICE.md](NOTICE.md)。

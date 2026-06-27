@@ -5,7 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>主動式 ETF 持股異動追蹤</title>
 <link rel="preconnect" href="https://cdn.jsdelivr.net" />
-<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+<!-- ECharts 5.5.0（Apache-2.0）自 jsdelivr CDN 載入，加上 SRI 完整性雜湊與 crossorigin，
+     避免 CDN 內容被竄改。如需離線／完全自管，可改下載至 web/vendor/ 並改本地路徑。 -->
+<script
+  src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"
+  integrity="sha384-o5uz97et3bErHvpKfD4Jz4n0JfhJDWABFuF4NP+iEEDxE1VwMWJ19QGR0lqFZnr6"
+  crossorigin="anonymous"
+  referrerpolicy="no-referrer"></script>
 <link rel="stylesheet" href="styles.css" />
 </head>
 <body>

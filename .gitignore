@@ -1,19 +1,47 @@
-.venv/
-__pycache__/
-*.pyc
-data/sqlite/*.sqlite
-data/raw/*.html
-data/exports/*.csv
-data/exports/*.xlsx
-data/daily_run.log
-data/verify_report.txt
+# ───────── 抓取／產生的資料（公開 repo 一律不含第三方抓取資料）─────────
+# Generated / scraped data
+web/data.json
+data/raw/
+data/sqlite/
+data/exports/
+data/cache/
+data/*.db
+data/*.sqlite
+data/*.sqlite3
+data/*.log
+data/*.txt
 data/.last_update
-.DS_Store
-# Claude Code 本機執行狀態（排程鎖等），不納入版控
-.claude/
-# 保留資料夾結構（內容已忽略），但追蹤 .gitkeep
+
+# Exported reports
+*.csv
+*.xlsx
+*.xls
+
+# 保留資料夾骨架（內容已忽略），但追蹤 .gitkeep 以維持結構
 !data/sqlite/.gitkeep
 !data/raw/.gitkeep
 !data/exports/.gitkeep
-# web/data.json 為產生檔；保留為 GitHub Pages 展示用，如不想追蹤可取消下行註解
-# web/data.json
+
+# Local env
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Node / frontend
+node_modules/
+dist/
+build/
+
+# macOS / Windows
+.DS_Store
+Thumbs.db
+
+# Claude Code 本機執行狀態（排程鎖等），不納入版控
+.claude/

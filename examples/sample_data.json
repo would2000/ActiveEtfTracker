@@ -1,0 +1,76 @@
+{
+ "_comment": "純虛構示範資料，供 UI demo 用。非真實 ETF/個股，與 TWSE/MoneyDJ 無關。公開 repo 不含真實抓取資料。",
+ "generated_at": "2026-01-02T09:00:00",
+ "etf_type": "stock",
+ "summary": {
+  "etf_count": 2,
+  "with_diff": 2,
+  "total_holdings": 9
+ },
+ "etfs": [
+  {
+   "etf_code": "0000XA",
+   "etf_name": "範例主動式示範股票ETF（虛構）",
+   "etf_type": "stock",
+   "issuer": "示範投信（虛構）",
+   "latest_date": "2026-01-02",
+   "prev_date": "2026-01-01",
+   "holding_count": 5,
+   "data_dates": 2
+  },
+  {
+   "etf_code": "0000YA",
+   "etf_name": "範例主動式樣本動能ETF（虛構）",
+   "etf_type": "stock",
+   "issuer": "範例資產管理（虛構）",
+   "latest_date": "2026-01-02",
+   "prev_date": "2026-01-01",
+   "holding_count": 4,
+   "data_dates": 2
+  }
+ ],
+ "holdings": {
+  "0000XA": {
+   "data_date": "2026-01-02",
+   "items": [
+    {"stock_id": "9001", "stock_name": "示範半導體（虛構）", "weight_pct": 28.5, "shares": 1200000},
+    {"stock_id": "9002", "stock_name": "範例金控（虛構）", "weight_pct": 19.2, "shares": 800000},
+    {"stock_id": "9003", "stock_name": "樣本電子（虛構）", "weight_pct": 15.0, "shares": 500000},
+    {"stock_id": "9004", "stock_name": "演示生技（虛構）", "weight_pct": 9.8, "shares": 300000},
+    {"stock_id": "9005", "stock_name": "虛構能源（虛構）", "weight_pct": 6.4, "shares": 150000}
+   ]
+  },
+  "0000YA": {
+   "data_date": "2026-01-02",
+   "items": [
+    {"stock_id": "9001", "stock_name": "示範半導體（虛構）", "weight_pct": 24.1, "shares": 600000},
+    {"stock_id": "9003", "stock_name": "樣本電子（虛構）", "weight_pct": 18.7, "shares": 420000},
+    {"stock_id": "9006", "stock_name": "範例網通（虛構）", "weight_pct": 12.3, "shares": 250000},
+    {"stock_id": "9005", "stock_name": "虛構能源（虛構）", "weight_pct": 7.5, "shares": 130000}
+   ]
+  }
+ },
+ "diffs": {
+  "0000XA": {
+   "from_date": "2026-01-01",
+   "to_date": "2026-01-02",
+   "items": [
+    {"stock_id": "9001", "stock_name": "示範半導體（虛構）", "change_type": "加碼", "old_shares": 1000000, "new_shares": 1200000, "old_weight_pct": 25.0, "new_weight_pct": 28.5, "weight_diff_pct": 3.5, "shares_diff": 200000},
+    {"stock_id": "9004", "stock_name": "演示生技（虛構）", "change_type": "新增持股", "old_shares": 0, "new_shares": 300000, "old_weight_pct": null, "new_weight_pct": 9.8, "weight_diff_pct": 9.8, "shares_diff": 300000},
+    {"stock_id": "9002", "stock_name": "範例金控（虛構）", "change_type": "減碼", "old_shares": 900000, "new_shares": 800000, "old_weight_pct": 21.0, "new_weight_pct": 19.2, "weight_diff_pct": -1.8, "shares_diff": -100000}
+   ]
+  },
+  "0000YA": {
+   "from_date": "2026-01-01",
+   "to_date": "2026-01-02",
+   "items": [
+    {"stock_id": "9001", "stock_name": "示範半導體（虛構）", "change_type": "加碼", "old_shares": 500000, "new_shares": 600000, "old_weight_pct": 20.5, "new_weight_pct": 24.1, "weight_diff_pct": 3.6, "shares_diff": 100000},
+    {"stock_id": "9007", "stock_name": "舊例材料（虛構）", "change_type": "出清持股", "old_shares": 180000, "new_shares": 0, "old_weight_pct": 6.0, "new_weight_pct": null, "weight_diff_pct": -6.0, "shares_diff": -180000}
+   ]
+  }
+ },
+ "common_add": [
+  {"stock_id": "9001", "stock_name": "示範半導體（虛構）", "direction": "add", "etf_count": 2, "etf_codes": ["0000XA", "0000YA"], "total_shares_diff": 300000}
+ ],
+ "common_reduce": []
+}

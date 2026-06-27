@@ -95,9 +95,27 @@ class _Handler(http.server.SimpleHTTPRequestHandler):
         }
 
     def do_GET(self):  # noqa: N802
-        if self.path.split("?")[0] == "/api/status":
+        path = self.path.split("?")[0]
+        if path == "/api/status":
             return self._json(200, self._status())
+        # 範例假資料放在 web/ 之外的 examples/；前端在無 data.json 時會 fallback 取它，
+        # 故這裡把這兩個路徑導到 examples/sample_data.json（本機預覽 UI 用）。
+        if path in ("/examples/sample_data.json", "/sample_data.json"):
+            return self._serve_sample()
         return super().do_GET()
+
+    def _serve_sample(self) -> None:
+        sample = config.PROJECT_ROOT / "examples" / "sample_data.json"
+        try:
+            body = sample.read_bytes()
+        except OSError:
+            return self.send_error(404, "sample_data.json not found")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
 
     def do_POST(self):  # noqa: N802
         if self.path.split("?")[0] == "/api/update":
