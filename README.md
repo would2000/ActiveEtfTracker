@@ -79,13 +79,22 @@ tail -f data/daily_run.log      # 看執行紀錄
 ```
 或直接在前端「立即更新」按鈕觸發（見下方說明）。
 
-> 本系統的價值來自**每天累積快照**，建議交易日收盤後固定手動跑一次。
+> 本系統的價值來自**每天累積快照**，交易日收盤後會自動更新（見下）；也可手動跑一次。
 
-> ℹ️ **本專案不使用背景排程（launchd / cron）。**
-> 早期曾用 launchd 排程，但放在 `~/Desktop` 等 macOS 隱私保護（TCC）目錄時，
-> launchd 背景程序無權存取，排程會以 `Operation not permitted`（結束碼 126）失敗。
-> 改為手動執行後此限制不再適用（互動式 Terminal session 有完整權限），
-> 專案因此可放在 `~/Desktop/Project/` 下。
+## 雲端自動更新（GitHub Actions）
+線上儀表板由 GitHub Actions 自動更新，**毋須本機開機**：
+[.github/workflows/refresh-data.yml](.github/workflows/refresh-data.yml) 於**台股交易日（週一至週五）
+台北 18:00–22:00 每小時各跑一次**（cron 為 UTC `0 10-14 * * 1-5`），流程為
+`抓取 → 比對 → 產生 web/data.json`，**只有實質資料變動時**才 commit 並重新部署 Pages
+（同一資料日期重抓視為無變動而略過，不灌爆 git 歷史）。
+
+> 為什麼是傍晚連跑 5 次：來源每日更新時間不固定，傍晚多抓幾次以盡早抓到當日新資料。
+> diff 需要跨次保留「最新兩個資料日期」，故 SQLite DB（`data/sqlite/*.sqlite`）**已納入版控**，
+> 由 Actions 隨快照一併 commit。GitHub cron 為 UTC、尖峰時可能延遲數分鐘觸發，屬正常現象。
+
+> ℹ️ **不使用本機背景排程（launchd / cron）。** 早期曾用 launchd 排程，但放在 `~/Desktop`
+> 等 macOS 隱私保護（TCC）目錄時，launchd 背景程序無權存取，會以 `Operation not permitted`
+> （結束碼 126）失敗。改為「本機手動執行 + 雲端 GitHub Actions 自動更新」後此限制不再適用。
 
 ## 輸出（data/exports/）
 ```
